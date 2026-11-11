@@ -7,7 +7,7 @@ import {pathToFileURL} from 'node:url';
 import {createApplication} from '../src/application.mjs';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE?pathToFileURL(process.env.PLAYWRIGHT_MODULE).href:'playwright');
 const base=resolve('test-results');mkdirSync(base,{recursive:true});const dir=mkdtempSync(resolve(base,'browser-'));
-const sent=[];const app=createApplication({dbPath:resolve(dir,'test.sqlite'),bootstrapPath:resolve(dir,'login.txt'),rateLimits:false,sendEmail:async mail=>sent.push(mail)});
+const sent=[];const app=createApplication({dbPath:resolve(dir,'test.sqlite'),bootstrapPath:resolve(dir,'login.txt'),rateLimits:false,sendEmail:async mail=>sent.push(mail),aiReply:async ({bot})=>`Mình là ${bot}, mình đang lắng nghe bạn.`});
 app.server.listen(0,'127.0.0.1');await once(app.server,'listening');
 const origin=`http://127.0.0.1:${app.server.address().port}`;
 const password=/Mật khẩu: (.+)/.exec(readFileSync(resolve(dir,'login.txt'),'utf8'))[1];
@@ -32,10 +32,15 @@ try{
  await signup.getByRole('button',{name:'Đăng xuất'}).first().click();await signupContext.close();
  await learner.goto(origin);await learner.getByRole('heading',{name:'Có những ngày, chỉ cần được lắng nghe.'}).waitFor();
  await learner.screenshot({path:resolve(base,'home-desktop.png'),fullPage:true});
+ await learner.locator('#soul-draft').fill('Hôm nay mình muốn kể một chuyện giả định.');
+ await learner.locator('#soul-form [name="aiConsent"]').check();
+ await learner.getByRole('button',{name:'Gửi cho Mây'}).click();
+ await learner.getByText('Mình là may, mình đang lắng nghe bạn.').waitFor();
+ await learner.screenshot({path:resolve(base,'ai-chat-desktop.png'),fullPage:true});
  await learner.getByRole('button',{name:'Đổi không gian ✧'}).click();await learner.getByRole('button',{name:/Biển đêm/}).click();await learner.getByRole('button',{name:'Tiếp tục viết với Mây'}).click();
  await learner.reload();await learner.waitForFunction(()=>document.body.dataset.theme==='ocean');
  await learner.locator('#soul-draft').fill('Tình huống giả để kiểm thử: mình bị cô lập trong nhóm lớp.');
- await learner.getByRole('button',{name:'Chuẩn bị lời nhắn'}).click();
+ await learner.getByRole('button',{name:'Chuyển lời viết thành báo tin cho người phụ trách'}).click();
  assert.equal(await learner.locator('[name="details"]').inputValue(),'Tình huống giả để kiểm thử: mình bị cô lập trong nhóm lớp.');
  assert.equal(await learner.locator('#contact-field').isVisible(),false);
  await learner.locator('#privacy-choice').selectOption('contact');await learner.locator('[name="contact"]').fill('Liên hệ giả ở phòng tư vấn sau tiết học.');
@@ -67,7 +72,7 @@ try{
  assert.equal(await learner.getByRole('button',{name:'Người phụ trách',exact:true}).isVisible(),true);
  await learner.getByRole('button',{name:'Người phụ trách',exact:true}).click();await learner.getByRole('heading',{name:'Đăng nhập để tiếp nhận.',exact:true}).waitFor();await learner.getByRole('button',{name:'Học sinh',exact:true}).click();
  await learner.getByRole('button',{name:'Cần giúp ngay',exact:true}).filter({visible:true}).click();await learner.locator('#emergency-form [name="accepted"]').check();await learner.locator('#emergency-form button[type="submit"]').click();await learner.getByRole('heading',{name:'Máy chủ đã lưu lời nhắn.'}).waitFor();
- await admin.getByRole('button',{name:'Đăng xuất',exact:true}).click();await admin.getByRole('button',{name:'Người phụ trách',exact:true}).click();await admin.locator('[name="username"]').fill('support');await admin.locator('[name="password"]').fill('Synthetic-password-123');await admin.getByRole('button',{name:'Đăng nhập',exact:true}).click();await admin.getByRole('heading',{name:'Hộp thư hỗ trợ.',exact:true}).waitFor();assert.equal(await admin.locator('.case-title').count(),1);
+ await admin.getByRole('button',{name:'Đăng xuất',exact:true}).click();await admin.getByRole('button',{name:'Người phụ trách',exact:true}).click();await admin.locator('[name="username"]').fill('support');await admin.locator('[name="password"]').fill('Synthetic-password-123');await admin.getByRole('button',{name:'Đăng nhập',exact:true}).click();await admin.getByRole('heading',{name:'Hộp thư hỗ trợ.',exact:true}).waitFor();await admin.locator('.case-title').waitFor();assert.equal(await admin.locator('.case-title').count(),1);
  await admin.getByRole('button',{name:'Tài khoản và lịch trực',exact:true}).click();await admin.locator('#password-form [name="currentPassword"]').fill('Synthetic-password-123');await admin.locator('#password-form [name="newPassword"]').fill('Synthetic-changed-123');await admin.locator('#password-form button[type="submit"]').click();await admin.getByRole('heading',{name:'Đăng nhập để tiếp nhận.',exact:true}).waitFor();
  assert.deepEqual(errors,[]);console.log('PASS: themes, responsive layout, private report, login, assignment, acknowledgment, two-way chat, audit, persistence, emergency, staff scope and password change. Screenshots in test-results/.');
 }finally{if(browser)await browser.close();const closed=once(app.server,'close');app.server.close();app.server.closeAllConnections();await closed;app.close();}

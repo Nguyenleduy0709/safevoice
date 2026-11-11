@@ -7,6 +7,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CATEGORIES, STATUSES, PRIORITIES, classify, appendMessage } from '../public/core.js';
 import {emailSenderFromEnvironment} from './email.mjs';
+import {pythonAI} from './ai-process.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -20,7 +21,7 @@ function field(value, max, required = false) {
 }
 const defaults = {serviceNote: 'Bản thử nghiệm trên máy. Chưa có lịch trực thực tế; chỉ nhập tình huống giả. Không dùng để chờ cứu trợ.', urgentMinutes: 5, elevatedMinutes: 60, standardMinutes: 1440};
 
-export function createApplication({dbPath = resolve(root, 'data/safevoice.sqlite'), bootstrapPath = resolve(root, 'data/first-login.txt'), rateLimits = true, clock = () => Date.now(), sendEmail = emailSenderFromEnvironment()} = {}) {
+export function createApplication({dbPath = resolve(root, 'data/safevoice.sqlite'), bootstrapPath = resolve(root, 'data/first-login.txt'), rateLimits = true, clock = () => Date.now(), sendEmail = emailSenderFromEnvironment(), aiReply = process.env.GEMINI_API_KEY && process.env.GEMINI_FREE_TIER_CONFIRMED === '1' ? pythonAI : null} = {}) {
   mkdirSync(dirname(dbPath), {recursive: true});
   const db = new DatabaseSync(dbPath);
   db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=3000;
@@ -119,7 +120,19 @@ export function createApplication({dbPath = resolve(root, 'data/safevoice.sqlite
         if(!body || typeof body !== 'object' || Array.isArray(body)) fail(400,'Nội dung gửi chưa hợp lệ.');
       }
       const client = req.socket.remoteAddress;
-      if(path === '/api/config' && method === 'GET') return send(200,{...getSettings(),emailEnabled:!!sendEmail});
+      if(path === '/api/config' && method === 'GET') return send(200,{...getSettings(),emailEnabled:!!sendEmail,aiEnabled:!!aiReply});
+      if(path === '/api/ai/chat' && method === 'POST') {
+        limit('ai:'+client,12,600000);
+        if(!aiReply) fail(503,'Chưa bật AI miễn phí. Người quản trị cần nhập khóa API trên máy.');
+        if(body.accepted!==true)fail(400,'Cần đồng ý gửi nội dung chat thử nghiệm đến Google để AI trả lời.');
+        const bot=field(body.bot,20,true),message=field(body.message,1500,true);
+        if(!['may','nhip','guong','rure','caunoi'].includes(bot)||!Array.isArray(body.history)||body.history.length>12)fail(400,'Trò chuyện chưa hợp lệ.');
+        for(const turn of body.history)if(!turn||!['user','model'].includes(turn.role)||typeof turn.text!=='string'||!turn.text.trim()||turn.text.length>1500)fail(400,'Lịch sử trò chuyện chưa hợp lệ.');
+        if(body.history.some(turn=>turn.role==='user'&&classify(turn.text).priority==='urgent'))fail(400,'Hãy xóa lời nhắn khẩn cấp khỏi lịch sử chat trước khi gửi tới AI.');
+        if(classify(message).priority==='urgent')return send(200,{urgent:true,reply:'Nếu bạn đang gặp nguy hiểm, hãy tìm ngay người lớn đáng tin cậy ở gần. Dùng nút Cần giúp ngay để xem các kênh trợ giúp. AI không nhận hay chuyển cảnh báo này.'});
+        try {const reply=await aiReply({bot,message,history:body.history});return send(200,{reply:String(reply).slice(0,2000),urgent:false});}
+        catch(error){fail(502,error.message==='Đã hết lượt dùng miễn phí tạm thời. Hãy thử lại sau.'?error.message:'AI chưa trả lời được. Kiểm tra kết nối hoặc khóa miễn phí.');}
+      }
       if(path === '/api/session' && method === 'GET') {const u=getSession(req,false);return send(200,{user:u ? publicUser(u):null});}
       if(path === '/api/student/email-code' && method === 'POST') {
         limit('email-ip:'+client,5,600000);

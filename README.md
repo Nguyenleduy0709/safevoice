@@ -2,7 +2,7 @@
 
 Ứng dụng thử nghiệm tiếng Việt giúp học sinh gửi lời nhắn và người phụ trách tiếp nhận, phân công, trao đổi, hẹn kiểm tra lại. Bản 0.3 chạy trên máy, giữ giao diện galaxy và năm nhân vật đồng hành.
 
-**Chỉ dùng tình huống giả. Chưa có AI thật, cứu trợ, SMS cảnh báo, trực 24/7 hoặc phê duyệt dùng với học sinh thật.** Email chỉ dùng gửi mã đăng nhập khi quản trị viên bật Gmail.
+**Chỉ dùng tình huống giả. Chưa có cứu trợ, SMS cảnh báo, trực 24/7 hoặc phê duyệt dùng với học sinh thật.** Chat AI dùng Gemini qua Python khi bật khóa miễn phí; email chỉ dùng gửi mã đăng nhập khi quản trị viên bật Gmail.
 
 ## Mở ứng dụng
 
@@ -12,6 +12,12 @@ Yêu cầu Node.js 24 trở lên. Chạy `npm ci` một lần để cài thư vi
 2. Vào http://127.0.0.1:4178 trong trình duyệt. Dùng đúng địa chỉ này, không thay bằng localhost.
 3. Chọn **Người phụ trách**. Lần đầu khởi động, ứng dụng tạo tài khoản `admin` và mật khẩu ngẫu nhiên trong `data/first-login.txt`. Có thể mở bằng `Mo-Tai-Khoan.cmd`.
 4. Vào **Tài khoản và lịch trực** để đổi mật khẩu, tạo người hỗ trợ và chỉnh thông tin tiếp nhận.
+
+### Trò chuyện với 5 bạn đồng hành AI
+
+Mở `Mo-SafeVoice-AI.cmd` trên máy đã cài khóa AI Studio. Nút này dừng bản SafeVoice cũ trong thư mục này và mở bản có AI. Vào **Góc tâm sự**, chọn Mây, Nhịp, Gương, Rủ Rê hoặc Cầu Nối, đánh dấu đồng ý gửi nội dung giả định đến Google rồi nhắn tin. Mỗi bạn có cách đáp riêng và lịch sử chat riêng trong trang hiện tại. Tải lại trang sẽ xóa lịch sử chat trên trình duyệt. Nút **Chuyển lời viết thành báo tin cho người phụ trách** là thao tác riêng, không tự gửi khi chat.
+
+Mã Python nằm ở `ai/chat.py` và gọi đúng model `gemini-3.5-flash-lite` qua REST API. [Bảng giá Google](https://ai.google.dev/gemini-api/docs/pricing) ghi model này có mức miễn phí với giới hạn. Bản này chỉ bật AI khi khóa nằm trong dự án Free tier và cờ xác nhận miễn phí được đặt; nó không tự nâng lên gói trả phí. Khi hết lượt, app báo thử lại sau. Khóa đã được mã hóa theo tài khoản Windows của máy, không nằm trong Git. Mức miễn phí của Google có thể dùng nội dung gửi để cải thiện sản phẩm, vì vậy **không nhập câu chuyện thật hoặc dữ liệu nhận dạng học sinh**. AI không phải người trực hay chuyên gia tâm lý; tin khẩn cấp được chặn khỏi luồng gọi AI theo quy tắc từ khóa, nhưng quy tắc này có thể bỏ sót.
 
 ### Bật Gmail gửi mã cho tài khoản học sinh
 
@@ -62,9 +68,9 @@ Xác nhận tiếp nhận không đóng ca. Người phụ trách có thể thay
 ## Dữ liệu và giới hạn
 
 - Dữ liệu được lưu tại `data/safevoice.sqlite`, không còn lưu ca mới trong localStorage. localStorage chỉ giữ lựa chọn nhân vật/nền. Nội dung cũ của bản demo không tự nhập hoặc tự xóa.
-- Bản nháp góc tâm sự chỉ nằm trong bộ nhớ trang; tải lại sẽ mất. Các nhân vật chưa trò chuyện bằng AI.
+- Bản nháp và lịch sử chat AI góc tâm sự chỉ nằm trong bộ nhớ trang; tải lại sẽ mất. Khi người dùng đồng ý và bấm gửi chat, tin nhắn và một phần lịch sử được chuyển tới Google để AI trả lời.
 - Cơ sở dữ liệu và bản sao lưu chưa được mã hóa trên ổ đĩa. Người có quyền quản trị máy có thể đọc; cần khóa máy và bảo vệ ổ đĩa. Không nhận dữ liệu thật trước rà soát.
-- Dữ liệu lời nhắn không tự gửi cho AI hoặc dịch vụ bên ngoài. Khi bật Gmail, địa chỉ email nhận và mã xác nhận được gửi qua Gmail. Máy chủ chỉ lắng nghe tại 127.0.0.1, không phục vụ điện thoại hoặc máy khác qua mạng LAN.
+- Lời nhắn gửi nhà trường không tự gửi cho AI. Khi bật Gmail, địa chỉ email nhận và mã xác nhận được gửi qua Gmail. Máy chủ chỉ lắng nghe tại 127.0.0.1, không phục vụ điện thoại hoặc máy khác qua mạng LAN.
 - Chưa có đa trường, lập lịch trực thực tế, chuyển tuyến tự động, tải bằng chứng, quản lý thời hạn xóa hay quy trình quyền dữ liệu hoàn chỉnh.
 - Giới hạn chống gửi quá nhanh hiện tính theo địa chỉ kết nối, phù hợp thử trên một máy; cần thiết kế lại trước triển khai nhiều người dùng.
 - Nhật ký có phân quyền nhưng chưa phải nhật ký chống sửa bởi quản trị viên máy. Nhắc hạn có thể được ghi lại khi phiên bản ca thay đổi.

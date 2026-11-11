@@ -133,3 +133,13 @@ test('Email verification expires, limits guesses, and needs configured transport
  const off=await fixture(t,{sendEmail:null});
  assert.equal((await off.request('/api/student/email-code',{email,name:'Thử nghiệm',purpose:'register'})).status,503);
 });
+test('AI replies use the selected bot, require consent, and keep urgent messages local',async t=>{
+ const calls=[];const f=await fixture(t,{aiReply:async input=>{calls.push(input);return 'Mình đang lắng nghe bạn.';}});
+ const valid={bot:'may',message:'Hôm nay mình thấy hơi buồn vì bạn không nói chuyện.',history:[],accepted:true};
+ assert.equal((await f.request('/api/ai/chat',{...valid,accepted:false})).status,400);
+ const answer=await f.request('/api/ai/chat',valid);assert.equal(answer.status,200);assert.equal(answer.data.reply,'Mình đang lắng nghe bạn.');assert.equal(calls[0].bot,'may');
+ const urgent=await f.request('/api/ai/chat',{...valid,message:'Mình đang bị đánh hội đồng.'});assert.equal(urgent.status,200);assert.equal(urgent.data.urgent,true);assert.equal(calls.length,1);
+ assert.equal((await f.request('/api/ai/chat',{...valid,history:[{role:'user',text:'Mình đang bị đánh hội đồng.'}]})).status,400);assert.equal(calls.length,1);
+ assert.equal((await f.request('/api/ai/chat',{...valid,bot:'unsafe'})).status,400);
+ const off=await fixture(t,{aiReply:null});assert.equal((await off.request('/api/ai/chat',valid)).status,503);
+});
