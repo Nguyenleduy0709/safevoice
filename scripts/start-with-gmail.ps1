@@ -5,6 +5,11 @@ if ($address -notmatch '^[^\s@]+@gmail\.com$') { throw 'Hay nhap dia chi @gmail.
 $secret = Read-Host 'Mat khau ung dung Gmail (16 ky tu; khong phai mat khau Gmail thuong)' -AsSecureString
 $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secret)
 try {
+  $serverPath = (Join-Path (Get-Location) 'server.mjs')
+  Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" |
+    Where-Object { $_.CommandLine -like "*$serverPath*" } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -ErrorAction Stop }
+  Start-Sleep -Seconds 1
   $env:SMTP_HOST = 'smtp.gmail.com'
   $env:SMTP_PORT = '465'
   $env:SMTP_USER = $address

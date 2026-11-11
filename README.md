@@ -16,7 +16,7 @@ Yêu cầu Node.js 24 trở lên. Chạy `npm ci` một lần để cài thư vi
 ### Bật Gmail gửi mã cho tài khoản học sinh
 
 1. Chuẩn bị một Gmail riêng dùng làm hộp thư gửi của SafeVoice. Trong tài khoản Google đó, bật xác minh hai bước rồi tạo [mật khẩu ứng dụng theo hướng dẫn Google](https://support.google.com/mail/answer/185833) cho ứng dụng này. Nếu tài khoản không cho tạo mật khẩu ứng dụng, cần dùng một hộp thư hoặc phương thức gửi khác.
-2. Đóng bản SafeVoice đang chạy trên cổng 4178. Mở `Mo-SafeVoice-Gmail.cmd`, nhập địa chỉ Gmail và mật khẩu ứng dụng trên chính máy này. Giữ cửa sổ mở khi thử nghiệm. Mật khẩu ứng dụng không được ghi vào file dự án.
+2. Mở `Mo-SafeVoice-Gmail.cmd`, nhập địa chỉ Gmail và mật khẩu ứng dụng trên chính máy này. Lệnh sẽ dừng đúng máy chủ SafeVoice cũ trong thư mục này rồi mở bản có Gmail. Giữ cửa sổ mở khi thử nghiệm. Mật khẩu ứng dụng không được ghi vào file dự án.
 3. Vào http://127.0.0.1:4178, chọn **Đăng nhập / Tạo tài khoản**, nhập email người nhận để thử mã 6 chữ số. Mã có hiệu lực 10 phút và mỗi mã chỉ dùng một lần.
 
 Không gửi mật khẩu ứng dụng qua chat hoặc đưa lên Git. Cần có kết nối Internet để Gmail gửi mã. Chưa thiết lập Gmail thì ứng dụng vẫn hoạt động phần gửi lời nhắn ẩn danh; màn hình tài khoản báo chưa cấu hình. Email gửi chỉ chứa mã xác nhận, không chứa nội dung lời nhắn. Học sinh tự đăng ký không được vào hộp thư của người phụ trách. Tài khoản học sinh và lời nhắn ẩn danh không tự liên kết; học sinh vẫn giữ mã tra cứu riêng.
