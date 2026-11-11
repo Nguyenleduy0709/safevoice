@@ -6,7 +6,7 @@ Cập nhật ngày 11/11/2026. Bản 0.3 là MVP chạy trên máy, chỉ thử 
 
 - Giữ giao diện galaxy, các nhân vật và nền riêng theo nhân vật.
 - Xây máy chủ lưu ca, đăng nhập người phụ trách, phân quyền, nhắn hai chiều, nhắc hạn và kiểm thử.
-- Lưu mã nguồn vào tài khoản GitHub Nguyenleduy0709. Kho sử dụng: safevoice, riêng tư.
+- Lưu mã nguồn vào tài khoản GitHub Nguyenleduy0709. Kho sử dụng: safevoice. Theo yêu cầu ngày 11/11/2026, kho mã đã chuyển sang công khai; dữ liệu demo và khóa API không đưa lên Git.
 - Không dùng dịch vụ trả phí, không gửi dữ liệu học sinh ra ngoài và không công bố website.
 - Sau khi lưu, kiểm thử và push thành công: yêu cầu Windows tắt máy theo yêu cầu của chủ dự án. Không ép đóng ứng dụng có dữ liệu chưa lưu.
 
@@ -45,7 +45,7 @@ Không cần cấp API key, mua dịch vụ, cung cấp dữ liệu học sinh t
 | Cảnh báo ngoài ứng dụng | SMS, email hay dịch vụ thông báo; người nhận và chi phí; xác nhận nhận ca | Nội dung thông báo chỉ có mã ca và yêu cầu đăng nhập, không lộ chuyện học sinh |
 | AI | Nhà cung cấp, ngân sách, dữ liệu được gửi, lưu log và đánh giá sai sót | Bắt đầu bằng tóm tắt nháp do người phụ trách duyệt |
 | Hỗ trợ tâm lý | Chuyên gia phụ trách nội dung và quy trình chuyển tuyến | Chưa triển khai chatbot trị liệu hay tâm sự tự do |
-| Đưa ra công khai | Tên miền, điều khoản, chính sách và người chịu trách nhiệm | Mã nguồn riêng tư và demo trên máy trước |
+| Đưa ra công khai | Tên miền, điều khoản, chính sách và người chịu trách nhiệm | Kho mã đã công khai; website vẫn chỉ chạy trên máy trước khi có phương án triển khai |
 
 ## Công việc kỹ thuật của đợt 2
 
