@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classify, makeReport, validateReport, appendMessage, updateCase, activeUrgent, escapeHTML, newCode, seedCases } from '../public/core.js';
+import { classify, screenReport, makeReport, validateReport, appendMessage, updateCase, activeUrgent, escapeHTML, newCode, seedCases } from '../public/core.js';
 const input={category:'Bắt nạt, cô lập',details:'Mình muốn chia sẻ về chuyện ở lớp.',location:'Lớp mẫu'};
 test('Manual emergency bypasses the keyword classifier',()=>assert.equal(classify('Nội dung chưa rõ',true).priority,'urgent'));
 test('Vietnamese danger phrasing triggers a review alert',()=>assert.equal(classify('Mình đang bị đánh ở cổng trường').priority,'urgent'));
@@ -8,6 +8,7 @@ test('Uppercase Đ and unaccented typing still trigger urgent',()=>{for(const t 
 test('Look-alike words without diacritics do not raise priority',()=>{for(const t of ['Dạo này mình hay lo lắng','Mình đi dạo sân trường','Tên mình có trong danh sách lớp','Phòng số hai','Mình dành thời gian đọc sách','Đánh giá bài kiểm tra'])assert.equal(classify(t).priority,'standard',t);});
 test('Threat and fear wording asks for an early look',()=>{for(const t of ['Mình bị đánh hôm qua','Mình rất sợ','Nó đe dọa mình'])assert.equal(classify(t).priority,'elevated',t);});
 test('No keyword result does not claim safety',()=>assert.match(classify('Hôm nay không vui').reason,/không xác nhận.*an toàn/));
+test('Structured signals elevate review without claiming a bullying verdict',()=>{const text='Nhóm bạn tẩy chay mình trong lớp.';assert.equal(screenReport({details:text,repeated:'yes',power:'yes'}).priority,'elevated');assert.equal(screenReport({details:text,safety:'yes'}).priority,'urgent');assert.equal(screenReport({details:text}).questions.length,2);assert.throws(()=>screenReport({details:text,power:'invalid'}));});
 test('Empty and oversize reports are rejected',()=>{assert.ok(validateReport({...input,details:' '}));assert.ok(validateReport({...input,details:'x'.repeat(3001)}));assert.equal(validateReport(input),'');});
 test('An emergency acknowledgment is not a case closure',()=>{const c=makeReport({...input,emergency:true},'SV-TEST');assert.equal(activeUrgent([c]).length,1);c.acknowledged=true;assert.equal(activeUrgent([c]).length,0);assert.equal(c.status,'received');assert.equal(c.priority,'urgent');});
 test('Status changes require an assigned person',()=>{const c=makeReport(input,'SV-TEST');assert.throws(()=>updateCase(c,{status:'supporting',assignee:''}));assert.throws(()=>updateCase(c,{status:'bogus',assignee:'Người mẫu'}));const next=updateCase(c,{status:'supporting',assignee:'Người mẫu'});assert.equal(next.status,'supporting');assert.equal(next.events.length,2);});

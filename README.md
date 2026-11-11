@@ -19,6 +19,12 @@ Mở `Mo-SafeVoice-AI.cmd` trên máy đã cài khóa AI Studio. Nút này dừn
 
 Mã Python nằm ở `ai/chat.py` và gọi đúng model `gemini-3.5-flash-lite` qua REST API. [Bảng giá Google](https://ai.google.dev/gemini-api/docs/pricing) ghi model này có mức miễn phí với giới hạn. Bản này chỉ bật AI khi khóa nằm trong dự án Free tier và cờ xác nhận miễn phí được đặt; nó không tự nâng lên gói trả phí. Khi hết lượt, app báo thử lại sau. Khóa đã được mã hóa theo tài khoản Windows của máy, không nằm trong Git. Mức miễn phí của Google có thể dùng nội dung gửi để cải thiện sản phẩm, vì vậy **không nhập câu chuyện thật hoặc dữ liệu nhận dạng học sinh**. AI không phải người trực hay chuyên gia tâm lý; tin khẩn cấp được chặn khỏi luồng gọi AI theo quy tắc từ khóa, nhưng quy tắc này có thể bỏ sót.
 
+### Sàng lọc báo tin để người phụ trách xác minh
+
+Mẫu báo tin hỏi thêm ba điều: hiện có nguy hiểm không, sự việc có lặp lại không, và người gặp chuyện có khó tự bảo vệ không. Có thể chọn **Chưa rõ**. Câu trả lời giúp quy tắc trên máy ưu tiên ca cần xem sớm hoặc khẩn cấp; không kết luận đây là bắt nạt. Trong hồ sơ, người phụ trách thấy dấu hiệu đã chọn và câu hỏi cần xác minh.
+
+Học sinh có thể **đồng ý riêng** cho AI xem lời kể giả định. Chỉ khi đã đồng ý, người phụ trách mới có nút **Yêu cầu AI gợi ý** trong hồ sơ. Nút này gửi lời kể, nhóm sự việc và ba câu trả lời tới Google; **không gửi cách liên hệ, địa điểm, chat riêng hay mã theo dõi**. AI đề xuất dấu hiệu, mức độ và câu hỏi; gợi ý chỉ hiện cho người phụ trách, không tự thay mức ưu tiên hoặc đóng ca. Ca không đồng ý vẫn được tiếp nhận bình thường. Đây là quy trình thử nghiệm bằng dữ liệu giả, chưa đánh giá độ chính xác trên học sinh thật.
+
 ### Bật Gmail gửi mã cho tài khoản học sinh
 
 1. Chuẩn bị một Gmail riêng dùng làm hộp thư gửi của SafeVoice. Trong tài khoản Google đó, bật xác minh hai bước rồi tạo [mật khẩu ứng dụng theo hướng dẫn Google](https://support.google.com/mail/answer/185833) cho ứng dụng này. Nếu tài khoản không cho tạo mật khẩu ứng dụng, cần dùng một hộp thư hoặc phương thức gửi khác.
@@ -70,7 +76,7 @@ Xác nhận tiếp nhận không đóng ca. Người phụ trách có thể thay
 - Dữ liệu được lưu tại `data/safevoice.sqlite`, không còn lưu ca mới trong localStorage. localStorage chỉ giữ lựa chọn nhân vật/nền. Nội dung cũ của bản demo không tự nhập hoặc tự xóa.
 - Bản nháp và lịch sử chat AI góc tâm sự chỉ nằm trong bộ nhớ trang; tải lại sẽ mất. Khi người dùng đồng ý và bấm gửi chat, tin nhắn và một phần lịch sử được chuyển tới Google để AI trả lời.
 - Cơ sở dữ liệu và bản sao lưu chưa được mã hóa trên ổ đĩa. Người có quyền quản trị máy có thể đọc; cần khóa máy và bảo vệ ổ đĩa. Không nhận dữ liệu thật trước rà soát.
-- Lời nhắn gửi nhà trường không tự gửi cho AI. Khi bật Gmail, địa chỉ email nhận và mã xác nhận được gửi qua Gmail. Máy chủ chỉ lắng nghe tại 127.0.0.1, không phục vụ điện thoại hoặc máy khác qua mạng LAN.
+- Lời nhắn gửi nhà trường không tự gửi cho AI. Chỉ lời kể của ca đồng ý riêng mới được gửi tới Google nếu người phụ trách bấm yêu cầu sàng lọc. Khi bật Gmail, địa chỉ email nhận và mã xác nhận được gửi qua Gmail. Máy chủ chỉ lắng nghe tại 127.0.0.1, không phục vụ điện thoại hoặc máy khác qua mạng LAN.
 - Chưa có đa trường, lập lịch trực thực tế, chuyển tuyến tự động, tải bằng chứng, quản lý thời hạn xóa hay quy trình quyền dữ liệu hoàn chỉnh.
 - Giới hạn chống gửi quá nhanh hiện tính theo địa chỉ kết nối, phù hợp thử trên một máy; cần thiết kế lại trước triển khai nhiều người dùng.
 - Nhật ký có phân quyền nhưng chưa phải nhật ký chống sửa bởi quản trị viên máy. Nhắc hạn có thể được ghi lại khi phiên bản ca thay đổi.

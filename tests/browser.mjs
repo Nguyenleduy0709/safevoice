@@ -7,7 +7,7 @@ import {pathToFileURL} from 'node:url';
 import {createApplication} from '../src/application.mjs';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE?pathToFileURL(process.env.PLAYWRIGHT_MODULE).href:'playwright');
 const base=resolve('test-results');mkdirSync(base,{recursive:true});const dir=mkdtempSync(resolve(base,'browser-'));
-const sent=[];const app=createApplication({dbPath:resolve(dir,'test.sqlite'),bootstrapPath:resolve(dir,'login.txt'),rateLimits:false,sendEmail:async mail=>sent.push(mail),aiReply:async ({bot})=>`Mình là ${bot}, mình đang lắng nghe bạn.`});
+const sent=[];const app=createApplication({dbPath:resolve(dir,'test.sqlite'),bootstrapPath:resolve(dir,'login.txt'),rateLimits:false,sendEmail:async mail=>sent.push(mail),aiReply:async ({bot})=>`Mình là ${bot}, mình đang lắng nghe bạn.`,aiTriage:async()=>({risk:'elevated',tags:['cô lập'],note:'Cần xác minh việc lặp lại.',questions:['Việc này bắt đầu khi nào?']})});
 app.server.listen(0,'127.0.0.1');await once(app.server,'listening');
 const origin=`http://127.0.0.1:${app.server.address().port}`;
 const password=/Mật khẩu: (.+)/.exec(readFileSync(resolve(dir,'login.txt'),'utf8'))[1];
@@ -42,8 +42,10 @@ try{
  await learner.locator('#soul-draft').fill('Tình huống giả để kiểm thử: mình bị cô lập trong nhóm lớp.');
  await learner.getByRole('button',{name:'Chuyển lời viết thành báo tin cho người phụ trách'}).click();
  assert.equal(await learner.locator('[name="details"]').inputValue(),'Tình huống giả để kiểm thử: mình bị cô lập trong nhóm lớp.');
+ await learner.setViewportSize({width:390,height:844});await learner.screenshot({path:resolve(base,'report-intake-mobile.png'),fullPage:true});assert.ok(await learner.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Report intake overflows mobile width');await learner.setViewportSize({width:1440,height:1000});
  assert.equal(await learner.locator('#contact-field').isVisible(),false);
  await learner.locator('#privacy-choice').selectOption('contact');await learner.locator('[name="contact"]').fill('Liên hệ giả ở phòng tư vấn sau tiết học.');
+ await learner.locator('#report-form [name="repeated"]').selectOption('yes');await learner.locator('#report-form [name="power"]').selectOption('yes');await learner.locator('#report-form [name="aiConsent"]').check();
  await learner.locator('[name="emergency"]').check();await learner.locator('[name="accepted"]').check();
  await learner.locator('#report-form button[type="submit"]').click();await learner.getByRole('heading',{name:'Máy chủ đã lưu lời nhắn.'}).waitFor();
  const secret=await learner.locator('.secret-code').innerText();assert.match(secret,/^SV-[A-F0-9]{40}$/);
@@ -51,6 +53,7 @@ try{
  await admin.goto(origin);await admin.getByRole('button',{name:'Người phụ trách',exact:true}).click();
  await admin.locator('[name="username"]').fill('admin');await admin.locator('[name="password"]').fill(password);await admin.getByRole('button',{name:'Đăng nhập',exact:true}).click();
  await admin.getByRole('heading',{name:'Hộp thư hỗ trợ.',exact:true}).waitFor();
+ await admin.locator('.case-title').first().click();await admin.getByRole('button',{name:'Yêu cầu AI gợi ý'}).click();await admin.getByText('Cần xác minh việc lặp lại.').waitFor();await admin.screenshot({path:resolve(base,'staff-ai-review-desktop.png'),fullPage:true});await admin.getByRole('button',{name:'Đóng',exact:true}).click();
  await admin.getByRole('button',{name:'Tài khoản và lịch trực',exact:true}).click();
  await admin.locator('#staff-form [name="name"]').fill('Người hỗ trợ thử nghiệm');await admin.locator('#staff-form [name="username"]').fill('support');await admin.locator('#staff-form [name="password"]').fill('Synthetic-password-123');
  await admin.locator('#staff-form button[type="submit"]').click();await admin.getByText('Người hỗ trợ thử nghiệm · support · Người hỗ trợ',{exact:true}).waitFor();

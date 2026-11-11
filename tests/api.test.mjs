@@ -143,3 +143,16 @@ test('AI replies use the selected bot, require consent, and keep urgent messages
  assert.equal((await f.request('/api/ai/chat',{...valid,bot:'unsafe'})).status,400);
  const off=await fixture(t,{aiReply:null});assert.equal((await off.request('/api/ai/chat',valid)).status,503);
 });
+test('Staff AI screening needs separate consent and never changes case priority',async t=>{
+ const calls=[];const f=await fixture(t,{aiTriage:async input=>{calls.push(input);return {risk:'urgent',tags:['cô lập'],note:'Cần kiểm tra mức độ an toàn và việc lặp lại.',questions:['Việc này đã xảy ra bao lâu?']};}});
+ const blocked=await report(f,{privacy:'contact',contact:'Liên hệ giả',details:'Một nhóm cô lập bạn ở lớp, tình huống giả.'});
+ assert.equal((await f.request('/api/cases/'+blocked.case.id+'/ai-review',{version:1},f.admin)).status,403);
+ const r=await report(f,{privacy:'contact',contact:'Liên hệ giả',aiConsent:true,repeated:'yes',power:'yes',details:'Một nhóm cô lập bạn ở lớp, tình huống giả.'});
+ let c=(await f.request('/api/cases/'+r.case.id,undefined,f.admin)).data;assert.equal(c.priority,'elevated');
+ assert.equal((await f.request('/api/cases/'+c.id+'/ai-review',{version:c.version})).status,401);
+ assert.equal((await f.request('/api/cases/'+c.id+'/ai-review',{version:99},f.admin)).status,409);
+ c=(await f.request('/api/cases/'+c.id+'/ai-review',{version:c.version},f.admin)).data;
+ assert.equal(c.aiReview.risk,'urgent');assert.equal(c.aiReview.lowerThanCurrent,false);assert.equal(c.priority,'elevated');assert.equal(calls.length,1);
+ assert.equal(calls[0].details,r.case.details);assert.equal(JSON.stringify(calls[0]).includes('Liên hệ giả'),false);
+ assert.equal((await f.request('/api/track',{code:r.code})).data.aiReview,undefined);
+});

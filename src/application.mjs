@@ -5,9 +5,9 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CATEGORIES, STATUSES, PRIORITIES, classify, appendMessage } from '../public/core.js';
+import { CATEGORIES, STATUSES, PRIORITIES, classify, screenReport, INTAKE_CHOICES, appendMessage } from '../public/core.js';
 import {emailSenderFromEnvironment} from './email.mjs';
-import {pythonAI} from './ai-process.mjs';
+import {pythonAI,pythonTriage} from './ai-process.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -21,7 +21,7 @@ function field(value, max, required = false) {
 }
 const defaults = {serviceNote: 'Bản thử nghiệm trên máy. Chưa có lịch trực thực tế; chỉ nhập tình huống giả. Không dùng để chờ cứu trợ.', urgentMinutes: 5, elevatedMinutes: 60, standardMinutes: 1440};
 
-export function createApplication({dbPath = resolve(root, 'data/safevoice.sqlite'), bootstrapPath = resolve(root, 'data/first-login.txt'), rateLimits = true, clock = () => Date.now(), sendEmail = emailSenderFromEnvironment(), aiReply = process.env.GEMINI_API_KEY && process.env.GEMINI_FREE_TIER_CONFIRMED === '1' ? pythonAI : null} = {}) {
+export function createApplication({dbPath = resolve(root, 'data/safevoice.sqlite'), bootstrapPath = resolve(root, 'data/first-login.txt'), rateLimits = true, clock = () => Date.now(), sendEmail = emailSenderFromEnvironment(), aiReply = process.env.GEMINI_API_KEY && process.env.GEMINI_FREE_TIER_CONFIRMED === '1' ? pythonAI : null, aiTriage = process.env.GEMINI_API_KEY && process.env.GEMINI_FREE_TIER_CONFIRMED === '1' ? pythonTriage : null} = {}) {
   mkdirSync(dirname(dbPath), {recursive: true});
   const db = new DatabaseSync(dbPath);
   db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=3000;
@@ -120,7 +120,7 @@ export function createApplication({dbPath = resolve(root, 'data/safevoice.sqlite
         if(!body || typeof body !== 'object' || Array.isArray(body)) fail(400,'Nội dung gửi chưa hợp lệ.');
       }
       const client = req.socket.remoteAddress;
-      if(path === '/api/config' && method === 'GET') return send(200,{...getSettings(),emailEnabled:!!sendEmail,aiEnabled:!!aiReply});
+      if(path === '/api/config' && method === 'GET') return send(200,{...getSettings(),emailEnabled:!!sendEmail,aiEnabled:!!aiReply,aiReviewEnabled:!!aiTriage});
       if(path === '/api/ai/chat' && method === 'POST') {
         limit('ai:'+client,12,600000);
         if(!aiReply) fail(503,'Chưa bật AI miễn phí. Người quản trị cần nhập khóa API trên máy.');
@@ -200,9 +200,12 @@ export function createApplication({dbPath = resolve(root, 'data/safevoice.sqlite
         const details=field(body.details,3000,true), location=field(body.location??'',120), when=field(body.when??'',100);
         if(details.length<10 || !CATEGORIES.includes(body.category) || !['self','friend','witness'].includes(body.relation) || !['anonymous','contact'].includes(body.privacy) || typeof body.emergency!=='boolean') fail(400,'Kiểm tra lại các thông tin trong lời nhắn.');
         const contact=body.privacy==='contact'?field(body.contact,200,true):'';
-        const assessment=classify(details,body.emergency), settings=getSettings();
+        if(body.aiConsent!==undefined && typeof body.aiConsent!=='boolean')fail(400,'Lựa chọn dùng AI chưa hợp lệ.');
+        const repeated=body.repeated??'unknown',power=body.power??'unknown',safety=body.safety??'unknown';
+        if(![repeated,power,safety].every(value=>INTAKE_CHOICES.includes(value)))fail(400,'Câu trả lời sàng lọc chưa hợp lệ.');
+        const assessment=screenReport({details,emergency:body.emergency,repeated,power,safety}), settings=getSettings();
         const token='SV-'+randomBytes(20).toString('hex').toUpperCase();
-        const c={id:randomUUID(),code:'CA-'+randomBytes(6).toString('hex').toUpperCase(),category:body.category,details,location:location||'Chưa cung cấp',when:when||'Chưa cung cấp',relation:body.relation,privacy:body.privacy,contact,priority:assessment.priority,reason:assessment.reason,status:'received',assigneeId:'',assignee:'',createdAt:nowISO(),acknowledged:false,version:1,messages:[],events:[{at:nowISO(),text:'Máy chủ đã lưu lời nhắn; chưa có người xác nhận tiếp nhận.'}],dueAt:new Date(clock()+settings[assessment.priority+'Minutes']*60000).toISOString()};
+        const c={id:randomUUID(),code:'CA-'+randomBytes(6).toString('hex').toUpperCase(),category:body.category,details,location:location||'Chưa cung cấp',when:when||'Chưa cung cấp',relation:body.relation,privacy:body.privacy,contact,aiConsent:body.aiConsent===true,intakeSignals:assessment.signals,reviewQuestions:assessment.questions,priority:assessment.priority,reason:assessment.reason,status:'received',assigneeId:'',assignee:'',createdAt:nowISO(),acknowledged:false,version:1,messages:[],events:[{at:nowISO(),text:'Máy chủ đã lưu lời nhắn; chưa có người xác nhận tiếp nhận.'}],dueAt:new Date(clock()+settings[assessment.priority+'Minutes']*60000).toISOString()};
         transaction(()=>{db.prepare('INSERT INTO cases VALUES(?,?,?,?)').run(c.id,hash(token),'',JSON.stringify(c));audit('student','Gửi lời nhắn',c.id);});
         return send(201,{code:token,case:studentCase(c)});
       }
@@ -219,11 +222,29 @@ export function createApplication({dbPath = resolve(root, 'data/safevoice.sqlite
         const rows=u.role==='admin'?db.prepare('SELECT payload FROM cases ORDER BY rowid DESC').all():db.prepare('SELECT payload FROM cases WHERE assignee=? ORDER BY rowid DESC').all(u.id);
         audit(u.id,'Xem hộp thư được phân quyền');return send(200,rows.map(r=>JSON.parse(r.payload)));
       }
-      const match=/^\/api\/cases\/([a-f0-9-]{36})(?:\/(messages|ack|audit))?$/.exec(path);
+      const match=/^\/api\/cases\/([a-f0-9-]{36})(?:\/(messages|ack|audit|ai-review))?$/.exec(path);
       if(match) {
         const u=requireStaff(req), c=loadCase(match[1],u), action=match[2];
         if(method==='GET' && action==='audit') {audit(u.id,'Xem lịch sử xử lý',c.id);return send(200,db.prepare('SELECT a.at,a.action,COALESCE(u.name,a.actor) AS actor FROM audit a LEFT JOIN users u ON a.actor=u.id WHERE case_id=? ORDER BY a.id').all(c.id));}
         if(method==='GET' && !action) {audit(u.id,'Mở hồ sơ',c.id);return send(200,c);}
+        if(method==='POST' && action==='ai-review') {
+          limit('ai-review:'+client,12,600000);
+          if(!aiTriage)fail(503,'Chưa bật AI sàng lọc thử nghiệm.');
+          if(!c.aiConsent)fail(403,'Người báo chưa đồng ý gửi nội dung báo tin tới Google.');
+          if(body.version!==c.version)fail(409,'Ca vừa thay đổi. Mở lại hồ sơ trước khi yêu cầu AI.');
+          let result;
+          try {result=await aiTriage({details:c.details,category:c.category,signals:c.intakeSignals??{safety:'unknown',repeated:'unknown',power:'unknown'}});}
+          catch {fail(502,'AI chưa sàng lọc được. Người phụ trách vẫn cần tự xem ca.');}
+          const allowedTags=['bạo lực thể chất','đe dọa','cô lập','bắt nạt trên mạng','tự làm hại','mâu thuẫn','chưa rõ'];
+          if(!result||!['urgent','elevated','standard','uncertain'].includes(result.risk)||!Array.isArray(result.tags)||!Array.isArray(result.questions))fail(502,'AI trả về gợi ý chưa hợp lệ.');
+          const tags=result.tags.filter(tag=>allowedTags.includes(tag)).slice(0,3);
+          const questions=result.questions.filter(q=>typeof q==='string'&&q.trim()).slice(0,2).map(q=>q.slice(0,180));
+          if(typeof result.note!=='string'||!result.note.trim()||result.note.length>500)fail(502,'AI trả về gợi ý chưa hợp lệ.');
+          const note=result.note.trim();
+          c.aiReview={risk:result.risk,tags,questions,note,lowerThanCurrent:result.risk!=='uncertain'&&rank[result.risk]<rank[c.priority],at:nowISO()};c.version++;
+          transaction(()=>{saveCase(c);audit(u.id,'Yêu cầu AI sàng lọc tình huống giả; người phụ trách vẫn quyết định',c.id);});
+          return send(200,c);
+        }
         if(method==='POST' && action==='messages') {
           field(body.message,1500,true);if(c.messages.length>=500)fail(400,'Ca đã đạt giới hạn trao đổi.');
           const next=appendMessage(c,'staff',body.message);next.version=c.version+1;

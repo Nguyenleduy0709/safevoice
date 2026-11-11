@@ -17,6 +17,21 @@ export function classify(text, emergency = false) {
   if (ELEVATED_PLAIN.test(plain) || ELEVATED_ACCENTED.test(lower)) return { priority:'elevated', reason:'Có dấu hiệu đe dọa hoặc tổn thương trong lời kể; cần người xem sớm.' };
   return { priority:'standard', reason:'Chưa phát hiện từ khóa khẩn cấp. Điều này không xác nhận tình huống an toàn; mọi tin đều cần người xem.' };
 }
+export const INTAKE_CHOICES = ['yes','no','unknown'];
+export function screenReport({details='',emergency=false,repeated='unknown',power='unknown',safety='unknown'}) {
+  if (![repeated,power,safety].every(value=>INTAKE_CHOICES.includes(value))) throw new Error('Câu trả lời sàng lọc chưa hợp lệ.');
+  const base=classify(details,emergency||safety==='yes');
+  let priority=base.priority,reason=base.reason;
+  if(safety==='yes' && !emergency) reason='Người báo cho biết hiện có nguy hiểm. Cần người phụ trách kiểm tra ngay.';
+  else if(priority==='standard' && (repeated==='yes'||power==='yes')) {
+    priority='elevated';reason='Có dấu hiệu sự việc lặp lại hoặc người báo khó tự bảo vệ. Cần người phụ trách xem sớm và xác minh.';
+  }
+  const questions=[];
+  if(safety==='unknown')questions.push('Hiện có ai đang không an toàn hoặc cần giúp ngay không?');
+  if(repeated==='unknown')questions.push('Sự việc đã xảy ra nhiều lần hoặc có khả năng lặp lại không?');
+  if(power==='unknown')questions.push('Người gặp chuyện có cảm thấy khó tự bảo vệ hoặc bị một nhóm gây sức ép không?');
+  return {priority,reason,signals:{safety,repeated,power},questions:questions.slice(0,2)};
+}
 export function validateReport({details='',location='',category=''}) {
   if (details.trim().length < 10) return 'Bạn kể thêm một chút nhé (ít nhất 10 ký tự).';
   if (details.length > 3000) return 'Lời kể tối đa 3.000 ký tự.';
