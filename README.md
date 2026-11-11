@@ -1,19 +1,27 @@
-# SafeVoice MVP
+# SafeVoice
 
 Ứng dụng thử nghiệm tiếng Việt giúp học sinh gửi lời nhắn và người phụ trách tiếp nhận, phân công, trao đổi, hẹn kiểm tra lại. Bản 0.3 chạy trên máy, giữ giao diện galaxy và năm nhân vật đồng hành.
 
-**Chỉ dùng tình huống giả. Chưa có AI thật, cứu trợ, SMS/email, trực 24/7 hoặc phê duyệt dùng với học sinh thật.**
+**Chỉ dùng tình huống giả. Chưa có AI thật, cứu trợ, SMS cảnh báo, trực 24/7 hoặc phê duyệt dùng với học sinh thật.** Email chỉ dùng gửi mã đăng nhập khi quản trị viên bật Gmail.
 
 ## Mở ứng dụng
 
-Yêu cầu Node.js 24 trở lên. Không cần cài thư viện để chạy ứng dụng và bộ kiểm thử API.
+Yêu cầu Node.js 24 trở lên. Chạy `npm ci` một lần để cài thư viện gửi email.
 
 1. Mở `Mo-SafeVoice.cmd`, giữ cửa sổ chạy mở.
 2. Vào http://127.0.0.1:4178 trong trình duyệt. Dùng đúng địa chỉ này, không thay bằng localhost.
 3. Chọn **Người phụ trách**. Lần đầu khởi động, ứng dụng tạo tài khoản `admin` và mật khẩu ngẫu nhiên trong `data/first-login.txt`. Có thể mở bằng `Mo-Tai-Khoan.cmd`.
 4. Vào **Tài khoản và lịch trực** để đổi mật khẩu, tạo người hỗ trợ và chỉnh thông tin tiếp nhận.
 
-Không chia sẻ tệp mật khẩu. Sau khi đổi mật khẩu, cất mật khẩu mới ở nơi an toàn và tự xóa tệp thông tin ban đầu nếu không còn cần. Tệp này không được cập nhật theo mật khẩu mới. Bản MVP chưa có chức năng quên mật khẩu hoặc MFA.
+### Bật Gmail gửi mã cho tài khoản học sinh
+
+1. Chuẩn bị một Gmail riêng dùng làm hộp thư gửi của SafeVoice. Trong tài khoản Google đó, bật xác minh hai bước rồi tạo [mật khẩu ứng dụng theo hướng dẫn Google](https://support.google.com/mail/answer/185833) cho ứng dụng này. Nếu tài khoản không cho tạo mật khẩu ứng dụng, cần dùng một hộp thư hoặc phương thức gửi khác.
+2. Đóng bản SafeVoice đang chạy trên cổng 4178. Mở `Mo-SafeVoice-Gmail.cmd`, nhập địa chỉ Gmail và mật khẩu ứng dụng trên chính máy này. Giữ cửa sổ mở khi thử nghiệm. Mật khẩu ứng dụng không được ghi vào file dự án.
+3. Vào http://127.0.0.1:4178, chọn **Đăng nhập / Tạo tài khoản**, nhập email người nhận để thử mã 6 chữ số. Mã có hiệu lực 10 phút và mỗi mã chỉ dùng một lần.
+
+Không gửi mật khẩu ứng dụng qua chat hoặc đưa lên Git. Cần có kết nối Internet để Gmail gửi mã. Chưa thiết lập Gmail thì ứng dụng vẫn hoạt động phần gửi lời nhắn ẩn danh; màn hình tài khoản báo chưa cấu hình. Email gửi chỉ chứa mã xác nhận, không chứa nội dung lời nhắn. Học sinh tự đăng ký không được vào hộp thư của người phụ trách. Tài khoản học sinh và lời nhắn ẩn danh không tự liên kết; học sinh vẫn giữ mã tra cứu riêng.
+
+Không chia sẻ tệp mật khẩu. Sau khi đổi mật khẩu, cất mật khẩu mới ở nơi an toàn và tự xóa tệp thông tin ban đầu nếu không còn cần. Tệp này không được cập nhật theo mật khẩu mới. Tài khoản người phụ trách chưa có chức năng quên mật khẩu hoặc xác thực email.
 
 Nếu cổng đã được bản demo cũ sử dụng, đóng cửa sổ chạy bản cũ hoặc chọn cổng khác trong PowerShell:
 
@@ -56,7 +64,7 @@ Xác nhận tiếp nhận không đóng ca. Người phụ trách có thể thay
 - Dữ liệu được lưu tại `data/safevoice.sqlite`, không còn lưu ca mới trong localStorage. localStorage chỉ giữ lựa chọn nhân vật/nền. Nội dung cũ của bản demo không tự nhập hoặc tự xóa.
 - Bản nháp góc tâm sự chỉ nằm trong bộ nhớ trang; tải lại sẽ mất. Các nhân vật chưa trò chuyện bằng AI.
 - Cơ sở dữ liệu và bản sao lưu chưa được mã hóa trên ổ đĩa. Người có quyền quản trị máy có thể đọc; cần khóa máy và bảo vệ ổ đĩa. Không nhận dữ liệu thật trước rà soát.
-- Dữ liệu không tự gửi cho AI hoặc dịch vụ bên ngoài. Máy chủ chỉ lắng nghe tại 127.0.0.1, không phục vụ điện thoại hoặc máy khác qua mạng LAN.
+- Dữ liệu lời nhắn không tự gửi cho AI hoặc dịch vụ bên ngoài. Khi bật Gmail, địa chỉ email nhận và mã xác nhận được gửi qua Gmail. Máy chủ chỉ lắng nghe tại 127.0.0.1, không phục vụ điện thoại hoặc máy khác qua mạng LAN.
 - Chưa có đa trường, lập lịch trực thực tế, chuyển tuyến tự động, tải bằng chứng, quản lý thời hạn xóa hay quy trình quyền dữ liệu hoàn chỉnh.
 - Giới hạn chống gửi quá nhanh hiện tính theo địa chỉ kết nối, phù hợp thử trên một máy; cần thiết kế lại trước triển khai nhiều người dùng.
 - Nhật ký có phân quyền nhưng chưa phải nhật ký chống sửa bởi quản trị viên máy. Nhắc hạn có thể được ghi lại khi phiên bản ca thay đổi.

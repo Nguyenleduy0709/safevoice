@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CATEGORIES, STATUSES, PRIORITIES, classify, appendMessage } from '../public/core.js';
+import {emailSenderFromEnvironment} from './email.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -19,7 +20,7 @@ function field(value, max, required = false) {
 }
 const defaults = {serviceNote: 'Bản thử nghiệm trên máy. Chưa có lịch trực thực tế; chỉ nhập tình huống giả. Không dùng để chờ cứu trợ.', urgentMinutes: 5, elevatedMinutes: 60, standardMinutes: 1440};
 
-export function createApplication({dbPath = resolve(root, 'data/safevoice.sqlite'), bootstrapPath = resolve(root, 'data/first-login.txt'), rateLimits = true, clock = () => Date.now()} = {}) {
+export function createApplication({dbPath = resolve(root, 'data/safevoice.sqlite'), bootstrapPath = resolve(root, 'data/first-login.txt'), rateLimits = true, clock = () => Date.now(), sendEmail = emailSenderFromEnvironment()} = {}) {
   mkdirSync(dirname(dbPath), {recursive: true});
   const db = new DatabaseSync(dbPath);
   db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=3000;
@@ -28,12 +29,13 @@ export function createApplication({dbPath = resolve(root, 'data/safevoice.sqlite
     CREATE TABLE IF NOT EXISTS cases(id TEXT PRIMARY KEY, token_hash TEXT UNIQUE NOT NULL, assignee TEXT NOT NULL, payload TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY, at TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, case_id TEXT);
     CREATE TABLE IF NOT EXISTS reminders(case_id TEXT NOT NULL REFERENCES cases(id), version INTEGER NOT NULL, at TEXT NOT NULL, PRIMARY KEY(case_id,version));
-    CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL);`);
+    CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS email_challenges(email TEXT NOT NULL, purpose TEXT NOT NULL, code_hash TEXT NOT NULL, nonce TEXT NOT NULL, name TEXT NOT NULL, expires INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(email,purpose));`);
   db.prepare('INSERT OR IGNORE INTO settings VALUES(1,?)').run(JSON.stringify(defaults));
   const getSettings = () => JSON.parse(db.prepare('SELECT payload FROM settings WHERE id=1').get().payload);
   const audit = (actor, action, id = null) => db.prepare('INSERT INTO audit(at,actor,action,case_id) VALUES(?,?,?,?)').run(nowISO(), actor, action, id);
   const publicUser = u => ({id: u.id, username: u.username, name: u.name, role: u.role});
-  const staffList = () => db.prepare('SELECT id,username,name,role FROM users WHERE active=1 ORDER BY name').all();
+  const staffList = () => db.prepare("SELECT id,username,name,role FROM users WHERE active=1 AND role IN ('admin','staff') ORDER BY name").all();
   const transaction = fn => { db.exec('BEGIN IMMEDIATE'); try { const result = fn(); db.exec('COMMIT'); return result; } catch(e) { db.exec('ROLLBACK'); throw e; } };
   function addUser(username, name, role, password) {
     if (!/^[a-z0-9._-]{3,40}$/.test(username) || !['admin','staff'].includes(role)) fail(400, 'Tên đăng nhập hoặc vai trò không hợp lệ.');
@@ -64,7 +66,10 @@ export function createApplication({dbPath = resolve(root, 'data/safevoice.sqlite
     if (!row && required) fail(401, 'Bạn cần đăng nhập lại.');
     return row || null;
   }
+  function requireStaff(req) {const u=getSession(req);if(!['admin','staff'].includes(u.role)) fail(403,'Tài khoản này không có quyền xem ca.');return u;}
   function requireAdmin(req) {const u = getSession(req); if(u.role !== 'admin') fail(403, 'Chỉ điều phối viên có quyền thực hiện.'); return u;}
+  function emailField(value) {const email=field(value,254,true).toLowerCase();if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))fail(400,'Địa chỉ email chưa hợp lệ.');return email;}
+  function issueSession(res,u) {const token=randomBytes(32).toString('hex');db.prepare('INSERT INTO sessions VALUES(?,?,?)').run(hash(token),u.id,clock()+8*3600000);res.setHeader('Set-Cookie',`sv_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800`);return publicUser(u);}
   function loadCase(id, user) {
     const row = db.prepare('SELECT payload FROM cases WHERE id=?').get(id);
     if (!row) fail(404, 'Không tìm thấy ca hoặc bạn không có quyền xem.');
@@ -91,6 +96,7 @@ export function createApplication({dbPath = resolve(root, 'data/safevoice.sqlite
       }
     }
     db.prepare('DELETE FROM sessions WHERE expires<=?').run(clock());
+    db.prepare('DELETE FROM email_challenges WHERE expires<=?').run(clock());
     for (const [key, value] of limits) if(value.until <= clock()) limits.delete(key);
   }
   const interval = setInterval(sweep,10000); interval.unref();
@@ -113,18 +119,44 @@ export function createApplication({dbPath = resolve(root, 'data/safevoice.sqlite
         if(!body || typeof body !== 'object' || Array.isArray(body)) fail(400,'Nội dung gửi chưa hợp lệ.');
       }
       const client = req.socket.remoteAddress;
-      if(path === '/api/config' && method === 'GET') return send(200,getSettings());
+      if(path === '/api/config' && method === 'GET') return send(200,{...getSettings(),emailEnabled:!!sendEmail});
       if(path === '/api/session' && method === 'GET') {const u=getSession(req,false);return send(200,{user:u ? publicUser(u):null});}
+      if(path === '/api/student/email-code' && method === 'POST') {
+        limit('email-ip:'+client,5,600000);
+        if(!sendEmail) fail(503,'Chưa cấu hình Gmail gửi mã. Người quản trị cần thiết lập trước.');
+        const email=emailField(body.email),purpose=field(body.purpose,16,true),name=purpose==='register'?field(body.name,80,true):'';
+        if(!['register','login'].includes(purpose))fail(400,'Mục đích xác nhận không hợp lệ.');
+        limit('email-address:'+email,3,600000);
+        const existing=db.prepare('SELECT * FROM users WHERE username=? AND role=? AND active=1').get(email,'student');
+        if(purpose==='register'&&existing)fail(409,'Email đã có tài khoản học sinh. Hãy chọn đăng nhập.');
+        if(purpose==='login'&&!existing)fail(404,'Email chưa có tài khoản học sinh. Hãy tạo tài khoản.');
+        const code=String(randomBytes(4).readUInt32BE()%1000000).padStart(6,'0'),nonce=randomBytes(16).toString('hex');
+        try {await sendEmail({to:email,code});} catch {fail(502,'Chưa gửi được mã. Kiểm tra cấu hình Gmail hoặc thử lại sau.');}
+        db.prepare('INSERT INTO email_challenges(email,purpose,code_hash,nonce,name,expires,attempts) VALUES(?,?,?,?,?,?,0) ON CONFLICT(email,purpose) DO UPDATE SET code_hash=excluded.code_hash,nonce=excluded.nonce,name=excluded.name,expires=excluded.expires,attempts=0').run(email,purpose,hash(nonce+code),nonce,name,clock()+600000);
+        return send(200,{ok:true,expiresMinutes:10});
+      }
+      if(path === '/api/student/verify' && method === 'POST') {
+        limit('verify-ip:'+client,15,600000);
+        const email=emailField(body.email),purpose=field(body.purpose,16,true),code=field(body.code,6,true);
+        if(!['register','login'].includes(purpose)||!/^\d{6}$/.test(code))fail(400,'Mã xác nhận cần đủ 6 chữ số.');
+        const challenge=db.prepare('SELECT * FROM email_challenges WHERE email=? AND purpose=?').get(email,purpose);
+        if(!challenge||challenge.expires<=clock()||challenge.attempts>=5)fail(400,'Mã đã hết hạn hoặc không hợp lệ. Hãy yêu cầu mã mới.');
+        db.prepare('UPDATE email_challenges SET attempts=attempts+1 WHERE email=? AND purpose=?').run(email,purpose);
+        if(!timingSafeEqual(Buffer.from(hash(challenge.nonce+code),'hex'),Buffer.from(challenge.code_hash,'hex')))fail(400,'Mã xác nhận chưa đúng.');
+        let u=db.prepare('SELECT * FROM users WHERE username=? AND role=? AND active=1').get(email,'student');
+        if(purpose==='login'&&!u)fail(404,'Tài khoản chưa tồn tại.');
+        if(purpose==='register'&&u)fail(409,'Email đã có tài khoản.');
+        transaction(()=>{if(!u){const id=randomUUID(),salt=randomBytes(16).toString('hex'),password=passwordHash(randomBytes(32).toString('hex'),salt);db.prepare('INSERT INTO users(id,username,name,role,salt,password) VALUES(?,?,?,?,?,?)').run(id,email,challenge.name,'student',salt,password);u=db.prepare('SELECT * FROM users WHERE id=?').get(id);}db.prepare('DELETE FROM email_challenges WHERE email=? AND purpose=?').run(email,purpose);audit(u.id,purpose==='register'?'Tạo tài khoản học sinh qua email':'Đăng nhập học sinh qua email');});
+        return send(200,{user:issueSession(res,u)});
+      }
       if(path === '/api/login' && method === 'POST') {
         limit('login:'+client,10,600000);
         const username=field(body.username,40,true).toLowerCase(), password=field(body.password,128,true);
         const u=db.prepare('SELECT * FROM users WHERE username=? AND active=1').get(username);
         const candidate=passwordHash(password,u?.salt||dummySalt);
         if(!u || !timingSafeEqual(Buffer.from(candidate,'hex'),Buffer.from(u.password,'hex'))) fail(401,'Tên đăng nhập hoặc mật khẩu chưa đúng.');
-        const token=randomBytes(32).toString('hex');
-        db.prepare('INSERT INTO sessions VALUES(?,?,?)').run(hash(token),u.id,clock()+8*3600000);
-        res.setHeader('Set-Cookie',`sv_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800`);
-        audit(u.id,'Đăng nhập');return send(200,{user:publicUser(u)});
+        if(!['admin','staff'].includes(u.role))fail(401,'Tài khoản học sinh đăng nhập bằng mã email.');
+        audit(u.id,'Đăng nhập');return send(200,{user:issueSession(res,u)});
       }
       if(path === '/api/logout' && method === 'POST') {
         const token=/(?:^|;\s*)sv_session=([a-f0-9]{64})/.exec(req.headers.cookie||'')?.[1];
@@ -132,7 +164,7 @@ export function createApplication({dbPath = resolve(root, 'data/safevoice.sqlite
         res.setHeader('Set-Cookie','sv_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');return send(200,{ok:true});
       }
       if(path === '/api/password' && method === 'POST') {
-        const u=getSession(req);limit('password:'+u.id,5,600000);
+        const u=requireStaff(req);limit('password:'+u.id,5,600000);
         const old=field(body.currentPassword,128,true), next=field(body.newPassword,128,true);
         if(next.length<12 || next===old) fail(400,'Dùng mật khẩu mới khác mật khẩu cũ, ít nhất 12 ký tự.');
         if(!timingSafeEqual(Buffer.from(passwordHash(old,u.salt),'hex'),Buffer.from(u.password,'hex'))) fail(400,'Mật khẩu hiện tại chưa đúng.');
@@ -140,7 +172,7 @@ export function createApplication({dbPath = resolve(root, 'data/safevoice.sqlite
         transaction(()=>{db.prepare('UPDATE users SET salt=?,password=? WHERE id=?').run(salt,passwordHash(next,salt),u.id);db.prepare('DELETE FROM sessions WHERE user_id=?').run(u.id);audit(u.id,'Đổi mật khẩu và thu hồi các phiên');});
         res.setHeader('Set-Cookie','sv_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');return send(200,{ok:true});
       }
-      if(path === '/api/staff' && method === 'GET') {getSession(req);return send(200,staffList());}
+      if(path === '/api/staff' && method === 'GET') {requireStaff(req);return send(200,staffList());}
       if(path === '/api/staff' && method === 'POST') {
         const u=requireAdmin(req);const created=addUser(field(body.username,40,true).toLowerCase(),field(body.name,80,true),body.role,body.password);audit(u.id,'Tạo tài khoản '+created.username);return send(201,created);
       }
@@ -170,13 +202,13 @@ export function createApplication({dbPath = resolve(root, 'data/safevoice.sqlite
         transaction(()=>{saveCase(next);audit('student','Bổ sung lời nhắn',c.id);});return send(200,studentCase(next));
       }
       if(path === '/api/cases' && method === 'GET') {
-        const u=getSession(req);sweep();
+        const u=requireStaff(req);sweep();
         const rows=u.role==='admin'?db.prepare('SELECT payload FROM cases ORDER BY rowid DESC').all():db.prepare('SELECT payload FROM cases WHERE assignee=? ORDER BY rowid DESC').all(u.id);
         audit(u.id,'Xem hộp thư được phân quyền');return send(200,rows.map(r=>JSON.parse(r.payload)));
       }
       const match=/^\/api\/cases\/([a-f0-9-]{36})(?:\/(messages|ack|audit))?$/.exec(path);
       if(match) {
-        const u=getSession(req), c=loadCase(match[1],u), action=match[2];
+        const u=requireStaff(req), c=loadCase(match[1],u), action=match[2];
         if(method==='GET' && action==='audit') {audit(u.id,'Xem lịch sử xử lý',c.id);return send(200,db.prepare('SELECT a.at,a.action,COALESCE(u.name,a.actor) AS actor FROM audit a LEFT JOIN users u ON a.actor=u.id WHERE case_id=? ORDER BY a.id').all(c.id));}
         if(method==='GET' && !action) {audit(u.id,'Mở hồ sơ',c.id);return send(200,c);}
         if(method==='POST' && action==='messages') {

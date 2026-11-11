@@ -109,3 +109,27 @@ test('SQLite backups are consistent and can be opened for recovery',async t=>{
  const f=await fixture(t);await report(f);const target=resolve(f.dir,'backup.sqlite');await backup(f.app.db,target);
  const restored=new DatabaseSync(target);assert.equal(restored.prepare('PRAGMA integrity_check').get().integrity_check,'ok');assert.equal(restored.prepare('SELECT count(*) AS n FROM cases').get().n,1);restored.close();
 });
+test('Student creates account with emailed code, signs in again, and cannot read staff data',async t=>{
+ const sent=[];const f=await fixture(t,{sendEmail:async mail=>sent.push(mail)});
+ const email='hoc.sinh@example.test';
+ assert.equal((await f.request('/api/student/email-code',{email,name:'Bạn thử nghiệm',purpose:'register'})).status,200);
+ assert.equal(sent.length,1);assert.equal(sent[0].to,email);assert.match(sent[0].code,/^\d{6}$/);
+ assert.equal((await f.request('/api/student/verify',{email,code:'999999'===sent[0].code?'000000':'999999',purpose:'register'})).status,400);
+ const verified=await f.request('/api/student/verify',{email,code:sent[0].code,purpose:'register'});
+ assert.equal(verified.status,200);assert.equal(verified.data.user.role,'student');
+ assert.equal((await f.request('/api/session',undefined,verified.cookie)).data.user.name,'Bạn thử nghiệm');
+ for(const path of ['/api/cases','/api/staff'])assert.equal((await f.request(path,undefined,verified.cookie)).status,403);
+ assert.equal((await f.request('/api/student/verify',{email,code:sent[0].code,purpose:'register'})).status,400);
+ assert.equal((await f.request('/api/student/email-code',{email,purpose:'login'})).status,200);
+ assert.equal((await f.request('/api/student/verify',{email,code:sent[1].code,purpose:'login'})).status,200);
+});
+test('Email verification expires, limits guesses, and needs configured transport',async t=>{
+ let time=Date.now();const sent=[];const f=await fixture(t,{clock:()=>time,sendEmail:async mail=>sent.push(mail)});
+ const email='test@example.test';await f.request('/api/student/email-code',{email,name:'Thử nghiệm',purpose:'register'});
+ for(let i=0;i<5;i++)assert.equal((await f.request('/api/student/verify',{email,code:'999999'===sent[0].code?'000000':'999999',purpose:'register'})).status,400);
+ assert.equal((await f.request('/api/student/verify',{email,code:sent[0].code,purpose:'register'})).status,400);
+ time+=11*60000;
+ assert.equal((await f.request('/api/student/verify',{email,code:sent[0].code,purpose:'register'})).status,400);
+ const off=await fixture(t,{sendEmail:null});
+ assert.equal((await off.request('/api/student/email-code',{email,name:'Thử nghiệm',purpose:'register'})).status,503);
+});
